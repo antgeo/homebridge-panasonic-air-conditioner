@@ -18,9 +18,10 @@ function PanasonicAC(log, config) {
 	this.debug = config["debug"] || false;
 	this.token = null;
 	this.device = null;
+	this.version = "1.5.1";
 
 	this.values = [];
-	this.values.Active = null;
+	this.values.Active = Characteristic.Active.INACTIVE;
 	this.values.CurrentTemperature = null;
 	this.values.ThresholdTemperature = null;
 
@@ -31,7 +32,7 @@ function PanasonicAC(log, config) {
 			"Accept": "application/json; charset=UTF-8",
 			"Content-Type": "application/json",
 			"X-APP-TYPE": 0,
-			"X-APP-VERSION": "1.5.1"
+			"X-APP-VERSION": this.version
 		},
 		json: {
 			"loginId": config["email"],
@@ -48,7 +49,7 @@ function PanasonicAC(log, config) {
 					"Accept": "application/json; charset=UTF-8",
 					"Content-Type": "application/json",
 					"X-APP-TYPE": 0,
-					"X-APP-VERSION": "1.5.1",
+					"X-APP-VERSION": this.version,
 					"X-User-Authorization": this.token
 				},
 				json: "",
@@ -59,10 +60,16 @@ function PanasonicAC(log, config) {
 					this.device = body['groupList'][0]['deviceIdList'][0]['deviceGuid'];
 					this.log("Logged into Panasonic account");
 				}
-				else {this.log("Could not find any Panasonic Air Conditioner devices");}
+				else {
+					this.log("Could not find any Panasonic Air Conditioner devices | Error # " + body['code'] + ": " + body['message']);
+					this.HeaterCooler.getCharacteristic(Characteristic.StatusFault).updateValue(Characteristic.StatusFault.GENERAL_FAULT);
+				}
 			}.bind(this));
 		}
-		else {this.log("Could not login to Panasonic account");}
+		else {
+			this.log("Could not login to Panasonic account | Error # " + body['code'] + ": " + body['message']);
+			this.HeaterCooler.getCharacteristic(Characteristic.StatusFault).updateValue(Characteristic.StatusFault.GENERAL_FAULT);
+		}
 	}.bind(this));
 }
 
@@ -142,7 +149,7 @@ PanasonicAC.prototype = {
 			.setCharacteristic(Characteristic.Name, this.name)
 			.setCharacteristic(Characteristic.Manufacturer, "Panasonic")
 			.setCharacteristic(Characteristic.Model, "CZ-TACG1")
-			.setCharacteristic(Characteristic.FirmwareRevision, "1.5.1")
+			.setCharacteristic(Characteristic.FirmwareRevision, this.version)
 			.setCharacteristic(Characteristic.SerialNumber, this.device);
 
 		return [informationService, this.HeaterCooler, this.SwitchEconavi, this.SwitchQuiet, this.SwitchPowerful];
@@ -162,7 +169,7 @@ PanasonicAC.prototype = {
 					"Accept": "application/json; charset=UTF-8",
 					"Content-Type": "application/json",
 					"X-APP-TYPE": 0,
-					"X-APP-VERSION": "1.5.1",
+					"X-APP-VERSION": this.version,
 					"X-User-Authorization": this.token
 				},
 				rejectUnauthorized: false
@@ -199,31 +206,42 @@ PanasonicAC.prototype = {
 
 					switch (json['parameters']['operationMode']) {
 						case 0: // auto
-							this.HeaterCooler.getCharacteristic(Characteristic.TargetHeaterCoolerState).setValue(0);
+							this.HeaterCooler.getCharacteristic(Characteristic.TargetHeaterCoolerState).setValue(Characteristic.TargetHeaterCoolerState.AUTO);
 							break;
 
 						case 3: // heat
-							this.HeaterCooler.getCharacteristic(Characteristic.TargetHeaterCoolerState).setValue(1);
+							this.HeaterCooler.getCharacteristic(Characteristic.TargetHeaterCoolerState).setValue(Characteristic.TargetHeaterCoolerState.HEAT);
 							break;
 
 						case 2: // cool
-							this.HeaterCooler.getCharacteristic(Characteristic.TargetHeaterCoolerState).setValue(2);
+							this.HeaterCooler.getCharacteristic(Characteristic.TargetHeaterCoolerState).setValue(Characteristic.TargetHeaterCoolerState.COOL);
 							break;
 					}
 
-					if (json['parameters']['ecoNavi'] == 2) {this.SwitchEconavi.getCharacteristic(Characteristic.Active).updateValue(1);}
-					else {this.SwitchEconavi.getCharacteristic(Characteristic.Active).updateValue(0);}
+					if (json['parameters']['ecoNavi'] == 2) {this.SwitchEconavi.getCharacteristic(Characteristic.Active).updateValue(Characteristic.Active.ACTIVE);}
+					else {this.SwitchEconavi.getCharacteristic(Characteristic.Active).updateValue(Characteristic.Active.INACTIVE);}
 
-					if (json['parameters']['ecoMode'] == 2) {this.SwitchQuiet.getCharacteristic(Characteristic.Active).updateValue(1);}
-					else {this.SwitchQuiet.getCharacteristic(Characteristic.Active).updateValue(0);}
+					if (json['parameters']['ecoMode'] == 2) {this.SwitchQuiet.getCharacteristic(Characteristic.Active).updateValue(Characteristic.Active.ACTIVE);}
+					else {this.SwitchQuiet.getCharacteristic(Characteristic.Active).updateValue(Characteristic.Active.INACTIVE);}
 
-					if (json['parameters']['ecoMode'] == 1) {this.SwitchPowerful.getCharacteristic(Characteristic.Active).updateValue(1);}
-					else {this.SwitchPowerful.getCharacteristic(Characteristic.Active).updateValue(0);}
+					if (json['parameters']['ecoMode'] == 1) {this.SwitchPowerful.getCharacteristic(Characteristic.Active).updateValue(Characteristic.Active.ACTIVE);}
+					else {this.SwitchPowerful.getCharacteristic(Characteristic.Active).updateValue(Characteristic.Active.INACTIVE);}
 
-					if (json['parameters']['operate'] == 1) {this.HeaterCooler.getCharacteristic(Characteristic.Active).updateValue(1);}
-					else {this.HeaterCooler.getCharacteristic(Characteristic.Active).updateValue(0);}
+					if (json['parameters']['operate'] == 1) {
+						this.values.Active = Characteristic.Active.ACTIVE;
+						this.HeaterCooler.getCharacteristic(Characteristic.Active).updateValue(Characteristic.Active.ACTIVE);
+					}
+					else {
+						this.values.Active = Characteristic.Active.INACTIVE;
+						this.HeaterCooler.getCharacteristic(Characteristic.Active).updateValue(Characteristic.Active.INACTIVE);
+					}
+
+					this.HeaterCooler.getCharacteristic(Characteristic.StatusFault).updateValue(Characteristic.StatusFault.NO_FAULT);
 				}
-				else {this.log("Could not send GET command");}
+				else {
+					this.log("Could not send GET command | Error # " + body['code'] + ": " + body['message']);
+					this.HeaterCooler.getCharacteristic(Characteristic.StatusFault).updateValue(Characteristic.StatusFault.GENERAL_FAULT);
+				}
 			}.bind(this));
 		}
 		else if(CharacteristicName == "CurrentTemperature") {callback(null, this.values.CurrentTemperature);}
@@ -325,7 +343,7 @@ PanasonicAC.prototype = {
 				"Accept": "application/json; charset=UTF-8",
 				"Content-Type": "application/json",
 				"X-APP-TYPE": 0,
-				"X-APP-VERSION": "1.5.1",
+				"X-APP-VERSION": this.version,
 				"X-User-Authorization": this.token
 			},
 			json: {
@@ -337,9 +355,16 @@ PanasonicAC.prototype = {
 			if (!err && response.statusCode == 200) {
 				callback();
 
-				if (body.result !== 0) {this.log("Could not send SET command");}
+				if (body.result !== 0) {
+					this.log("Could not send SET command | Error # " + body['code'] + ": " + body['message']);
+					this.HeaterCooler.getCharacteristic(Characteristic.StatusFault).updateValue(Characteristic.StatusFault.GENERAL_FAULT);
+				}
+				else {this.HeaterCooler.getCharacteristic(Characteristic.StatusFault).updateValue(Characteristic.StatusFault.NO_FAULT);}
 			}
-			else {this.log("Could not send SET command");}
+			else {
+				this.log("Could not send SET command | Error # " + body['code'] + ": " + body['message']);
+				this.HeaterCooler.getCharacteristic(Characteristic.StatusFault).updateValue(Characteristic.StatusFault.GENERAL_FAULT);
+			}
 		}.bind(this));
 	}
 
